@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Daily Business Report</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; display: flex; justify-content: center; min-height: 100vh; }
+    
+    .app-container {
+      width: 100%; max-width: 480px; background: #ffffff; min-height: 100vh;
+      display: flex; flex-direction: column; box-shadow: 0 0 20px rgba(0,0,0,0.05); position: relative;
+    }
+    
+    header { background: #1e293b; color: white; padding: 20px; text-align: center; }
+    header h1 { font-size: 1.25rem; font-weight: 600; }
+    
+    .screen { padding: 20px; display: none; flex-direction: column; gap: 16px; flex: 1; }
+    .screen.active { display: flex; }
+    
+    /* Input Fields & Buttons */
+    input, select, button {
+      width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1;
+      font-size: 1rem; outline: none; transition: all 0.2s;
+    }
+    input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    
+    .btn { font-weight: 600; color: white; border: none; cursor: pointer; text-align: center; }
+    .btn:active { transform: scale(0.98); }
+    
+    .btn-green { background-color: #10b981; }
+    .btn-red { background-color: #ef4444; }
+    .btn-orange { background-color: #f59e0b; }
+    .btn-blue { background-color: #2563eb; }
+    .btn-dark { background-color: #334155; }
+    
+    .dashboard-grid { display: flex; flex-direction: column; gap: 16px; margin-top: auto; margin-bottom: auto; }
+    .dashboard-grid .btn { padding: 20px; font-size: 1.1rem; border-radius: 12px; }
+    
+    /* Balance Sheet Styles */
+    .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+    .summary-date { font-weight: 700; color: #475569; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.95rem; }
+    .row.total { font-weight: 700; border-top: 1px dashed #cbd5e1; padding-top: 6px; margin-top: 6px; }
+    .text-green { color: #10b981; }
+    .text-red { color: #ef4444; }
+    .text-orange { color: #f59e0b; }
+
+    /* Sync Indicator */
+    .sync-status { text-align: center; font-size: 0.85rem; color: #64748b; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <header>
+    <h1 id="appHeaderTitle">Business Daily Report</h1>
+  </header>
+
+  <!-- SETUP SCREEN -->
+  <div id="setupScreen" class="screen">
+    <h2>Connect Spreadsheet</h2>
+    <p style="color: #64748b; font-size: 0.9rem;">Paste your deployed Google Apps Script Web App URL below to connect your sheet.</p>
+    <input type="url" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" required>
+    <button class="btn btn-blue" onclick="saveScriptUrl()">Save &amp; Continue</button>
+  </div>
+
+  <!-- MAIN DASHBOARD SCREEN -->
+  <div id="mainScreen" class="screen">
+    <div class="dashboard-grid">
+      <button class="btn btn-green" onclick="openEntryForm('Daily Income')">Daily Income</button>
+      <button class="btn btn-red" onclick="openEntryForm('Expense')">Expenses</button>
+      <button class="btn btn-orange" onclick="openEntryForm('Bill')">Bills</button>
+      <button class="btn btn-blue" onclick="openBalanceSheet()">Day-by-Day Balance Sheet</button>
+    </div>
+    <div class="sync-status" id="syncStatus">Status: Ready</div>
+    <button class="btn btn-dark" style="padding: 8px; font-size: 0.8rem; margin-top: auto;" onclick="resetConfig()">Change Sheet Link</button>
+  </div>
+
+  <!-- ENTRY FORM SCREEN -->
+  <div id="formScreen" class="screen">
+    <h2 id="formTitle">New Entry</h2>
+    <input type="number" id="entryAmount" placeholder="Amount" step="0.01" required>
+    <input type="text" id="entryNotes" placeholder="Notes / Description (Optional)">
+    <button class="btn btn-blue" onclick="saveEntry()">Save Entry</button>
+    <button class="btn btn-dark" onclick="showScreen('mainScreen')">Cancel</button>
+  </div>
+
+  <!-- BALANCE SHEET SCREEN -->
+  <div id="sheetScreen" class="screen">
+    <h2>Day-by-Day Balance Sheet</h2>
+    <div id="sheetList" style="flex: 1; overflow-y: auto;">
+      <p style="text-align: center; color: #64748b;">Loading entries...</p>
+    </div>
+    <button class="btn btn-dark" onclick="showScreen('mainScreen')">Back to Dashboard</button>
+  </div>
+</div>
+
+<script>
+  let currentEntryType = '';
+
+  window.addEventListener('load', () => {
+    checkSetup();
+    syncLocalEntries();
+  });
+
+  function checkSetup() {
+    const url = localStorage.getItem('script_url');
+    if (!url) {
+      showScreen('setupScreen');
+    } else {
+      showScreen('mainScreen');
+    }
+  }
+
+  function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+  }
+
+  function saveScriptUrl() {
+    const url = document.getElementById('scriptUrlInput').value.trim();
+    if (url) {
+      localStorage.setItem('script_url', url);
+      showScreen('mainScreen');
+    } else {
+      alert('Please enter a valid URL');
+    }
+  }
+
+  function resetConfig() {
+    if (confirm("Disconnect Google Sheet link?")) {
+      localStorage.removeItem('script_url');
+      showScreen('setupScreen');
+    }
+  }
+
+  function openEntryForm(type) {
+    currentEntryType = type;
+    document.getElementById('formTitle').innerText = 'Add ' + type;
+    document.getElementById('entryAmount').value = '';
+    document.getElementById('entryNotes').value = '';
+    showScreen('formScreen');
+  }
+
+  function saveEntry() {
+    const amount = parseFloat(document.getElementById('entryAmount').value);
+    const notes = document.getElementById('entryNotes').value.trim();
+    
+    if (!amount || amount <= 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+
+    const currentDate = new Date().toISOString().split('T')[0];
+    const newEntry = {
+      id: Date.now(),
+      date: currentDate,
+      type: currentEntryType,
+      notes: notes || currentEntryType,
+      amount: amount,
+      synced: false
+    };
+
+    // Store in LocalStorage immediately
+    let entries = JSON.parse(localStorage.getItem('local_entries') || '[]');
+    entries.push(newEntry);
+    localStorage.setItem('local_entries', JSON.stringify(entries));
+
+    showScreen('mainScreen');
+    syncLocalEntries();
+  }
+
+  async function syncLocalEntries() {
+    const scriptUrl = localStorage.getItem('script_url');
+    if (!scriptUrl) return;
+
+    let entries = JSON.parse(localStorage.getItem('local_entries') || '[]');
+    const unsynced = entries.filter(e => !e.synced);
+
+    if (unsynced.length === 0) {
+      document.getElementById('syncStatus').innerText = "Status: All records synced";
+      return;
+    }
+
+    document.getElementById('syncStatus').innerText = `Status: Syncing ${unsynced.length} pending...`;
+
+    for (let entry of unsynced) {
+      try {
+        await fetch(scriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'add',
+            date: entry.date,
+            type: entry.type,
+            notes: entry.notes,
+            amount: entry.amount
+          })
+        });
+        entry.synced = true;
+      } catch (err) {
+        console.error("Sync failed for item:", entry);
+      }
+    }
+
+    localStorage.setItem('local_entries', JSON.stringify(entries));
+    document.getElementById('syncStatus').innerText = "Status: All records synced";
+  }
+
+  async function openBalanceSheet() {
+    showScreen('sheetScreen');
+    const container = document.getElementById('sheetList');
+    container.innerHTML = '<p style="text-align: center; color: #64748b;">Loading...</p>';
+
+    const scriptUrl = localStorage.getItem('script_url');
+    let remoteEntries = [];
+
+    if (scriptUrl) {
+      try {
+        const res = await fetch(scriptUrl);
+        remoteEntries = await res.json();
+      } catch (e) {
+        console.warn("Could not fetch remote, building from local storage");
+      }
+    }
+
+    // Merge remote and unsynced local data
+    let localEntries = JSON.parse(localStorage.getItem('local_entries') || '[]');
+    let allData = [...remoteEntries];
+
+    localEntries.forEach(loc => {
+      if (!allData.some(rem => rem.date === loc.date && rem.amount == loc.amount && rem.type === loc.type)) {
+        allData.push(loc);
+      }
+    });
+
+    if (allData.length === 0) {
+      container.innerHTML = '<p style="text-align: center; color: #64748b;">No data recorded yet.</p>';
+      return;
+    }
+
+    // Group by Date
+    const grouped = {};
+    allData.forEach(item => {
+      let dateKey = item.date;
+      if (typeof dateKey === 'string' && dateKey.includes('T')) {
+        dateKey = dateKey.split('T')[0];
+      }
+      if (!grouped[dateKey]) grouped[dateKey] = { income: 0, expense: 0, bill: 0 };
+
+      const amt = parseFloat(item.amount) || 0;
+      if (item.type === 'Daily Income') grouped[dateKey].income += amt;
+      else if (item.type === 'Expense') grouped[dateKey].expense += amt;
+      else if (item.type === 'Bill') grouped[dateKey].bill += amt;
+    });
+
+    // Render Grouped Day-by-Day Balance
+    container.innerHTML = '';
+    Object.keys(grouped).sort().reverse().forEach(date => {
+      const g = grouped[date];
+      const net = g.income - (g.expense + g.bill);
+
+      const card = document.createElement('div');
+      card.className = 'summary-card';
+      card.innerHTML = `
+        <div class="summary-date">${date}</div>
+        <div class="row"><span>Income:</span> <span class="text-green">+$${g.income.toFixed(2)}</span></div>
+        <div class="row"><span>Expenses:</span> <span class="text-red">-$${g.expense.toFixed(2)}</span></div>
+        <div class="row"><span>Bills:</span> <span class="text-orange">-$${g.bill.toFixed(2)}</span></div>
+        <div class="row total"><span>Day Net Balance:</span> <span class="${net >= 0 ? 'text-green' : 'text-red'}">$${net.toFixed(2)}</span></div>
+      `;
+      container.appendChild(card);
+    });
+  }
+</script>
+</body>
+</html>
